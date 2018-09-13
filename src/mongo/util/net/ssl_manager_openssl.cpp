@@ -1350,9 +1350,10 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
     }
 
     // This is to standardize the IPAddress format for comparison. 
+    auto remoteHostName = remoteHost;
     auto swCIDRRemoteHost = CIDR::parse(remoteHost);
     if (swCIDRRemoteHost.isOK()) {
-         remoteHost = swCIDRRemoteHost.getValue().toString();
+         remoteHostName = swCIDRRemoteHost.getValue().toString();
     }
 
     // Try to match using the Subject Alternate Name, if it exists.
@@ -1379,7 +1380,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
                     dnsName = swCIDRDNSName.getValue().toString();
                     warning() << "You have an IP Address in the DNS Name field on your certificate. We will not allow this in MongoDB version 4.2.";
                 }
-                if (hostNameMatchForX509Certificates(remoteHost, dnsName)) {
+                if (hostNameMatchForX509Certificates(remoteHostName, dnsName)) {
                     sanMatch = true;
                     break;
                 }
@@ -1390,7 +1391,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
                 if (swCIDRIPAddress.isOK()) {
                     ipAddress = swCIDRIPAddress.getValue().toString();
                 }
-                if (hostNameMatchForX509Certificates(remoteHost, ipAddress)) {
+                if (hostNameMatchForX509Certificates(remoteHostName, ipAddress)) {
                     sanMatch = true;
                     break;
                 }
@@ -1403,7 +1404,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
         auto swCN = peerSubject.getOID(kOID_CommonName);
         if (swCN.isOK()) {
             auto commonName = std::move(swCN.getValue());
-            if (hostNameMatchForX509Certificates(remoteHost, commonName)) {
+            if (hostNameMatchForX509Certificates(remoteHostName, commonName)) {
                 cnMatch = true;
             }
             certificateNames << "CN: " << commonName;
@@ -1417,7 +1418,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
         msgBuilder << "The server certificate does not match the host name. Hostname: "
                    << remoteHost << " does not match " << certificateNames.str();
         std::string msg = msgBuilder.str();
-        if (_allowInvalidCertificates || _allowInvalidHostnames || isUnixDomainSocket(remoteHost)) {
+        if (_allowInvalidCertificates || _allowInvalidHostnames || isUnixDomainSocket(remoteHostName)) {
             warning() << msg;
         } else {
             error() << msg;
