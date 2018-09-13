@@ -1348,6 +1348,12 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
             SSLPeerInfo(peerSubject, std::move(swPeerCertificateRoles.getValue())));
     }
 
+    // This is to standardize the IPAddress format for comparison. 
+    auto swCIDRRemoteHost = CIDR::parse(remoteHost);
+    if (swCIDRRemoteHost.isOK()) {
+         remoteHost = swCIDRRemoteHost.getValue().toString();
+    }
+
     // Try to match using the Subject Alternate Name, if it exists.
     // RFC-2818 requires the Subject Alternate Name to be used if present.
     // Otherwise, the most specific Common Name field in the subject field
@@ -1366,12 +1372,27 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
         for (int i = 0; i < sanNamesList; i++) {
             const GENERAL_NAME* currentName = sk_GENERAL_NAME_value(sanNames, i);
             if (currentName && currentName->type == GEN_DNS) {
-                char* dnsName = reinterpret_cast<char*>(ASN1_STRING_data(currentName->d.dNSName));
+                std::string dnsName (reinterpret_cast<char*>(ASN1_STRING_data(currentName->d.dNSName)));
+                auto swCIDRDNSName = CIDR::parse(dnsName);
+                if (swCIDRDNSName.isOK()) {
+                    dnsName = swCIDRDNSName.getValue().toString();
+                    warning() << "You have an IP Address in the DNS Name field on your certificate. We will not allow this in MongoDB version 4.2.";
+                }
                 if (hostNameMatchForX509Certificates(remoteHost, dnsName)) {
                     sanMatch = true;
                     break;
                 }
                 certificateNames << std::string(dnsName) << " ";
+            } else if (currentName && currentName -> type == GEN_IPADD) {
+                std::string ipAddress (reinterpret_cast<char*>(ASN1_STRING_data(currentName->d.iPAddress)));
+                auto swCIDRIPAddress = CIDR::parse(ipAddress);
+                if (swCIDRIPAddress.isOK()) {
+                    ipAddress = swCIDRIPAddress.getValue().toString();
+                }
+                if (hostNameMatchForX509Certificates(remoteHost, ipAddress)) {
+                    sanMatch = true;
+                    break;
+                }
             }
         }
         sk_GENERAL_NAME_pop_free(sanNames, GENERAL_NAME_free);

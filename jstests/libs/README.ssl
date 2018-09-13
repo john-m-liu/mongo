@@ -51,3 +51,26 @@ cat roles.pem roles2.key > roles_final.pem
 Example Commands for UTF-8
 --------------------------
 openssl req -new -utf8 -nameopt multiline,utf8  -config .\jstests\libs\client_utf8.cnf -newkey rsa:2048 -nodes -keyout roles.key -out roles.csr
+
+
+openssl x509 -req -sha256 -in CSR.csr -days 3650 -out roles.pem -extfile openssl.cnf  -CA jstests/libs/ca.pem -CAcreateserial
+
+openssl req -config openssl.cnf -newkey rsa:2048 -nodes -keyout privateKey.key -out roles.csr -subj "/C=US/ST=New York/L=New York City/O=MongoDB/OU=KernelUser/CN=client/emailAddress=example@mongodb.com"
+
+--------------------------
+
+Example of Extension: To sign certificate with SAN
+
+Copy or use the ca.pem file from jstests/libs/ca.pem
+Copy the openssl_SAN.cfg from jstests/libs/openssl_SAN.cfg or create your own
+
+#Create the client certificate
+openssl genrsa -out client.key 2048                                                                                                           #Creates the client key
+openssl req -new -key client.key -out client.csr -config openssl_SAN.cfg -extensions v3_req                                                   #Creates the unsigned client certificate (change v3_req to whatever extensions in the cfg file)
+openssl x509 -req -days 3650 -in client.csr -CA ca.pem -set_serial 01 -out client.crt -extfile openssl_SAN.cfg -extensions v3_req             #Creates the signed client certificate
+cat client.crt client.key > client.pem                                                                                                        #Joins the signed cert with the key for the client pem
+
+openssl genrsa -out server.key 2048
+openssl req -new -key server.key -out server.csr -config openssl_SAN.cfg -extensions v3_req                                                   #Creates the unsigned server certificate (change v3_req to whatever extensions in the cfg file)
+openssl x509 -req -days 3650 -in server.csr -CA ca.pem -set_serial 01 -out server.crt -extfile openssl_SAN.cfg -extensions v3_req             #Creates the signed server certificate
+cat server.crt server.key > server.pem                                                                                                        #Joins the signed cert with the key for the server pem

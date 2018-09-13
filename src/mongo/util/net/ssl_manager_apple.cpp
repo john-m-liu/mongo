@@ -51,6 +51,7 @@
 #include "mongo/util/net/ssl/apple.hpp"
 #include "mongo/util/net/ssl_manager.h"
 #include "mongo/util/net/ssl_options.h"
+#include "mongo/util/net/cidr.h"
 
 using asio::ssl::apple::CFUniquePtr;
 
@@ -486,11 +487,16 @@ StatusWith<std::vector<std::string>> extractSubjectAlternateNames(::CFDictionary
         if (!swLabel.isOK()) {
             return swLabel.getStatus();
         }
-        if (::CFStringCompare(swLabel.getValue(), CFSTR("DNS Name"), ::kCFCompareCaseInsensitive) !=
-            ::kCFCompareEqualTo) {
+        if ((::CFStringCompare(swLabel.getValue(), CFSTR("DNS Name"), ::kCFCompareCaseInsensitive) != ::kCFCompareEqualTo)
+         && (::CFStringCompare(swLabel.getValue(), CFSTR("IP Address"), ::kCFCompareCaseInsensitive) != ::kCFCompareEqualTo)) {
             // Skip other elements, e.g. 'Critical'
             continue;
         }
+        bool dnsFlag = false;
+        if (::CFStringCompare(swLabel.getValue(), CFSTR("DNS Name"), ::kCFCompareCaseInsensitive) == ::kCFCompareEqualTo) {
+            dnsFlag = true;
+        }
+
         auto swName = extractDictionaryValue<::CFStringRef>(elem, ::kSecPropertyKeyValue);
         if (!swName.isOK()) {
             return swName.getStatus();
@@ -498,6 +504,13 @@ StatusWith<std::vector<std::string>> extractSubjectAlternateNames(::CFDictionary
         auto swNameStr = toString(swName.getValue());
         if (!swNameStr.isOK()) {
             return swNameStr.getStatus();
+        }
+        auto swCIDRValue = CIDR::parse(swNameStr.getValue());
+        if (swCIDRValue.isOK()) {
+            swNameStr = swCIDRValue.getValue().toString();
+            if (dnsFlag) {
+                warning() << "You have an IP Address in the DNS Name field on your certificate. We will not allow this in MongoDB version 4.2.";
+            }
         }
         ret.push_back(swNameStr.getValue());
     }
@@ -1368,9 +1381,22 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerApple::parseAndValidatePeerCe
         }
     }
 
+    bool ipv6 = false;
+    auto remoteHostName = remoteHost;
+
+    if (!remoteHost.empty()) {
+        auto swCIDRRemoteHost = CIDR::parse(remoteHost);
+        if (swCIDRRemoteHost.isOK()) {
+            remoteHostName = swCIDRRemoteHost.getValue().toString();
+            if (remoteHostName.find(':') != std::string::npos) {
+                ipv6 = true;
+            }
+        }
+    }
+
     auto result = ::kSecTrustResultInvalid;
     uassertOSStatusOK(::SecTrustEvaluate(cftrust.get(), &result), ErrorCodes::SSLHandshakeFailed);
-    if ((result != ::kSecTrustResultProceed) && (result != ::kSecTrustResultUnspecified)) {
+    if ((result != ::kSecTrustResultProceed) && (result != ::kSecTrustResultUnspecified) && (!ipv6)) {
         return badCert(explainTrustFailure(cftrust.get(), result), _allowInvalidCertificates);
     }
 
@@ -1431,7 +1457,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerApple::parseAndValidatePeerCe
     if (!sans.empty()) {
         certErr << "SAN(s): ";
         for (auto& san : sans) {
-            if (hostNameMatchForX509Certificates(remoteHost, san)) {
+            if (hostNameMatchForX509Certificates(remoteHostName, san)) {
                 sanMatch = true;
                 break;
             }
@@ -1442,7 +1468,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerApple::parseAndValidatePeerCe
         auto swCN = peerSubjectName.getOID(kOID_CommonName);
         if (swCN.isOK()) {
             auto commonName = std::move(swCN.getValue());
-            if (hostNameMatchForX509Certificates(remoteHost, commonName)) {
+            if (hostNameMatchForX509Certificates(remoteHostName, commonName)) {
                 cnMatch = true;
             }
             certErr << "CN: " << commonName;
@@ -1453,7 +1479,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerApple::parseAndValidatePeerCe
 
     if (!sanMatch && !cnMatch) {
         const auto msg = certErr.str();
-        if (_allowInvalidCertificates || _allowInvalidHostnames || isUnixDomainSocket(remoteHost)) {
+        if (_allowInvalidCertificates || _allowInvalidHostnames || isUnixDomainSocket(remoteHostName)) {
             warning() << msg;
         } else {
             error() << msg;
