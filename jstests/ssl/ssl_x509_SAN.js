@@ -4,7 +4,7 @@ load('jstests/ssl/libs/ssl_helpers.js');
     "use strict";
 
     const SERVER1_CERT = "jstests/libs/server_SAN.pem";
-    const SERVER2_CERT = "jstests/libs/server_SAN2.pem"
+    const SERVER2_CERT = "jstests/libs/server_SAN2.pem";
     const CA_CERT = "jstests/libs/ca.pem";
     const CLIENT_CERT = "jstests/libs/client_SAN.pem";
 
@@ -62,7 +62,6 @@ load('jstests/ssl/libs/ssl_helpers.js');
     print("1. Testing x.509 auth to mongod");
     {
         let mongo = MongoRunner.runMongod(x509_options);
-        print("MMONGONSDOJNFOSNDF")
         authAndTest(mongo.port);
         MongoRunner.stopMongod(mongo);
     }

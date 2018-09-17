@@ -59,6 +59,7 @@
 #include "mongo/util/net/ssl_types.h"
 #include "mongo/util/text.h"
 #include "mongo/util/uuid.h"
+#include "mongo/base/data_range.h"
 
 namespace mongo {
 
@@ -1518,6 +1519,9 @@ StatusWith<std::vector<std::string>> getSubjectAlternativeNames(PCCERT_CONTEXT c
     for (size_t i = 0; i < altNames->cAltEntry; i++) {
         if (altNames->rgAltEntry[i].dwAltNameChoice == CERT_ALT_NAME_DNS_NAME) {
             names.push_back(toUtf8String(altNames->rgAltEntry[i].pwszDNSName));
+        } else if (altNames->rgAltEntry[i].dwAltNameChoice == CERT_ALT_NAME_IP_ADDRESS) {
+            auto ip_struct = altNames->rgAltEntry[i].IPAddress;
+            
         }
     }
 

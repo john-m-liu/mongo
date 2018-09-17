@@ -1384,7 +1384,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
                     sanMatch = true;
                     break;
                 }
-                certificateNames << std::string(dnsName) << " ";
+                certificateNames << std::string(dnsName) << ", ";
             } else if (currentName && currentName -> type == GEN_IPADD) {
                 std::string ipAddress (reinterpret_cast<char*>(ASN1_STRING_data(currentName->d.iPAddress)));
                 auto swCIDRIPAddress = CIDR::parse(ipAddress);
@@ -1395,6 +1395,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
                     sanMatch = true;
                     break;
                 }
+                certificateNames << std::string(ipAddress) << ", ";
             }
         }
         sk_GENERAL_NAME_pop_free(sanNames, GENERAL_NAME_free);
@@ -1418,7 +1419,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerOpenSSL::parseAndValidatePeer
         msgBuilder << "The server certificate does not match the host name. Hostname: "
                    << remoteHost << " does not match " << certificateNames.str();
         std::string msg = msgBuilder.str();
-        if (_allowInvalidCertificates || _allowInvalidHostnames || isUnixDomainSocket(remoteHostName)) {
+        if (_allowInvalidCertificates || _allowInvalidHostnames || isUnixDomainSocket(remoteHost)) {
             warning() << msg;
         } else {
             error() << msg;

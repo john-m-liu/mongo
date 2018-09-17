@@ -1479,7 +1479,7 @@ StatusWith<boost::optional<SSLPeerInfo>> SSLManagerApple::parseAndValidatePeerCe
 
     if (!sanMatch && !cnMatch) {
         const auto msg = certErr.str();
-        if (_allowInvalidCertificates || _allowInvalidHostnames || isUnixDomainSocket(remoteHostName)) {
+        if (_allowInvalidCertificates || _allowInvalidHostnames || isUnixDomainSocket(remoteHost)) {
             warning() << msg;
         } else {
             error() << msg;
